@@ -1,0 +1,1777 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Ecommerce Term_Assignment Cloud Formation Template'
+
+
+
+Resources:
+
+  
+
+  # Define the DynamoDB Table
+  UsersTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'UsersTable'
+      AttributeDefinitions:
+        - AttributeName: 'id'
+          AttributeType: 'S'
+        - AttributeName: 'email'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'id'
+          KeyType: 'HASH'
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      GlobalSecondaryIndexes:
+        - IndexName: 'email-index'
+          KeySchema:
+            - AttributeName: 'email'
+              KeyType: 'HASH'
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+
+  ProductsTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'ProductsTable'
+      AttributeDefinitions:
+        - AttributeName: 'id'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'id'
+          KeyType: 'HASH'
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  OrdersTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'OrdersTable'
+      AttributeDefinitions:
+        - AttributeName: 'id'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'id'
+          KeyType: 'HASH'
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # Define Lambda Functions
+  UsersLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'UsersLambdaFunction'
+      Handler: 'index.handler'
+      Runtime: 'nodejs20.x'
+      Code:
+        S3Bucket: 'clothing-images-ecom'
+        S3Key: 'users_crud_s3.zip'
+      Role: 'arn:aws:iam::685083958127:role/LabRole'
+      Timeout: 30
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref UsersTable
+          QUEUE_URL: !Sub https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/Notification
+
+  ProductsLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'ProductsLambdaFunction'
+      Handler: 'index.handler'
+      Runtime: 'nodejs20.x'
+      Code:
+        S3Bucket: 'clothing-images-ecom'
+        S3Key: 'products_crud_s3.zip'
+      Role: 'arn:aws:iam::685083958127:role/LabRole'
+      Timeout: 30
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ProductsTable
+
+  OrdersLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'OrdersLambdaFunction'
+      Handler: 'index.handler'
+      Runtime: 'nodejs20.x'
+      Code:
+        S3Bucket: 'clothing-images-ecom'
+        S3Key: 'orders_crud_s3.zip'
+      Role: 'arn:aws:iam::685083958127:role/LabRole'
+      Timeout: 30
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref OrdersTable   
+
+  ImageUploadLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'ImageUploadLambdaFunction'
+      Handler: 'lambda_function.lambda_handler'
+      Runtime: 'python3.12'
+      Code:
+        S3Bucket: 'clothing-images-ecom'
+        S3Key: 'image_upload_s3.zip'
+      Role: 'arn:aws:iam::685083958127:role/LabRole'
+      Timeout: 30 
+      Environment:
+        Variables:
+          BUCKET_NAME: "clothing-images-ecom"     
+
+  NotificationLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'NotficationLambdaFunction'
+      Handler: 'index.handler'
+      Runtime: 'nodejs20.x'
+      Code:
+        S3Bucket: 'clothing-images-ecom'
+        S3Key: 'email_notification_s3.zip'
+      Role: 'arn:aws:iam::685083958127:role/LabRole'
+      Timeout: 30           
+
+  # SQS creation 
+
+  NotificationQueue:
+    Type: "AWS::SQS::Queue"
+    Properties:
+      QueueName: "Notification"
+      VisibilityTimeout: 43200
+      MessageRetentionPeriod: 60
+
+  # SQS (NotificationQueue) trigger to NotficationLambdaFunction    
+
+  LambdaSQSTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 10
+      EventSourceArn: !GetAtt NotificationQueue.Arn
+      FunctionName: !GetAtt NotificationLambdaFunction.Arn
+      Enabled: true
+
+
+
+  # Lambda Permissions
+  UsersLambdaPermissionGet:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref UsersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/GET/users
+
+  UsersLambdaPermissionPost:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref UsersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/POST/users
+
+  UsersLambdaPermissionIdDelete:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref UsersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/DELETE/users/*
+
+  UsersLambdaPermissionIdGet:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref UsersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/GET/users/*
+
+  UsersLambdaPermissionIdPatch:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref UsersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/PATCH/users/*
+
+  
+  LoginLambdaPermissionPost:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref UsersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/POST/users/login
+
+
+  #Define Products lambda permission 
+
+  ProductsLambdaPermissionPost:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ProductsLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/POST/products
+
+  ProductsLambdaPermissionIdGet:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ProductsLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/GET/products/*
+
+  ProductsLambdaPermissionIdPatch:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ProductsLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/PATCH/products/* 
+
+  ProductsLambdaPermissionIdDelete:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ProductsLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/DELETE/products/* 
+
+  ProductsLambdaPermissionGet:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ProductsLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/GET/products  
+
+  #Define Orders lambda permission
+
+  OrdersLambdaPermissionGet:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrdersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/GET/orders
+
+
+  OrdersLambdaPermissionPost:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrdersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/POST/orders
+
+
+  OrdersLambdaPermissionIdPost:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrdersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/POST/orders/*
+
+  OrdersLambdaPermissionIdPatch:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrdersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/PATCH/orders/*    
+
+
+  OrdersLambdaPermissionIdDelete:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrdersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/DELETE/orders/*
+
+
+  OrdersLambdaPermissionIdGet:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OrdersLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllOperationsApiGateway}/*/GET/orders/* 
+
+  #Define ImageUpload lambda permission   
+
+  ImageUploadPermissionIdGet:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ImageUploadLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageUploadApiGateway}/*/POST/file-upload
+
+
+
+
+  # Define the API Gateway
+  AllOperationsApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: AllOperations
+      Description: API for orders, products, users, and login
+
+  # Define resources and methods for /users
+  UsersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt AllOperationsApiGateway.RootResourceId
+      PathPart: users
+      RestApiId: !Ref AllOperationsApiGateway
+
+  UsersGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref UsersResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""  
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'      
+
+  UsersPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref UsersResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  UsersOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref UsersResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Type: MOCK       
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  # Define resources and methods for /users/{id}
+  UsersIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref UsersResource
+      PathPart: "{id}"
+      RestApiId: !Ref AllOperationsApiGateway
+
+  UsersIdDeleteMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: DELETE
+      ResourceId: !Ref UsersIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "" 
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  UsersIdGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref UsersIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  UsersIdPatchMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: PATCH
+      ResourceId: !Ref UsersIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  UsersIdPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref UsersIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  UsersIdOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref UsersIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Type: MOCK       
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  # Define resources and methods for /login
+  LoginResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref UsersResource
+      PathPart: login
+      RestApiId: !Ref AllOperationsApiGateway
+
+  LoginPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST  
+      ResourceId: !Ref LoginResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  LoginOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref LoginResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Type: MOCK       
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+
+  
+
+  # Define resources and methods for /products
+  ProductsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt AllOperationsApiGateway.RootResourceId
+      PathPart: products
+      RestApiId: !Ref AllOperationsApiGateway
+
+  ProductsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref ProductsResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""  
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'      
+
+  ProductsPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref ProductsResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  ProductsOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref ProductsResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Type: MOCK       
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  # Define resources and methods for /products/{id}
+  ProductsIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ProductsResource
+      PathPart: "{id}"
+      RestApiId: !Ref AllOperationsApiGateway
+
+  ProductsIdDeleteMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: DELETE
+      ResourceId: !Ref ProductsIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "" 
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  ProductsIdGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref ProductsIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  ProductsIdPatchMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: PATCH
+      ResourceId: !Ref ProductsIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  ProductsIdPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref ProductsIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  ProductsIdOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref ProductsIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Type: MOCK       
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+
+
+  # Define resources and methods for /orders
+  OrdersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt AllOperationsApiGateway.RootResourceId
+      PathPart: orders
+      RestApiId: !Ref AllOperationsApiGateway
+
+  OrdersGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref OrdersResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrdersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""  
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'      
+
+  OrdersPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref OrdersResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrdersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  OrdersOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref OrdersResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Type: MOCK       
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  # Define resources and methods for /users/{id}
+  OrdersIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref OrdersResource
+      PathPart: "{id}"
+      RestApiId: !Ref AllOperationsApiGateway
+
+  OrdersIdDeleteMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: DELETE
+      ResourceId: !Ref OrdersIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrdersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "" 
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  OrdersIdGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref OrdersIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrdersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  OrdersIdPatchMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: PATCH
+      ResourceId: !Ref OrdersIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrdersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  OrdersIdPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref OrdersIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrdersLambdaFunction.Arn}/invocations
+        RequestTemplates:
+          application/json: |
+            {
+              "body": $input.json('$'),
+              "httpMethod": "$context.httpMethod",
+              "resource": "$context.resourcePath",
+              "pathParameters": {
+                #foreach($param in $input.params().path.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "queryStringParameters": {
+                #foreach($param in $input.params().querystring.keySet())
+                  "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                  #if($foreach.hasNext),#end
+                #end
+              },
+              "headers": {
+                #foreach($header in $input.params().header.keySet())
+                  "$header": "$util.escapeJavaScript($input.params().header.get($header))"
+                  #if($foreach.hasNext),#end
+                #end
+              }
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ""
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  OrdersIdOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref OrdersIdResource
+      RestApiId: !Ref AllOperationsApiGateway
+      Integration:
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,OPTIONS,PATCH,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Type: MOCK       
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  # Define the API Gateway for image upload to s3 bucket
+  ImageUploadApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: ImageUpload
+      Description: API for orders, products, users, and login
+
+
+  # Define resources and methods for /file-upload
+  FileUploadResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ImageUploadApiGateway.RootResourceId
+      PathPart: file-upload
+      RestApiId: !Ref ImageUploadApiGateway
+
+  ImageUploadPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref FileUploadResource
+      RestApiId: !Ref ImageUploadApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ImageUploadLambdaFunction.Arn}/invocations
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      RequestParameters:
+            method.request.header.Content-Type: true        
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+          
+
+  ImageUploadOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref FileUploadResource
+      RestApiId: !Ref ImageUploadApiGateway
+      Integration:
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Type: MOCK       
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+
+  
+
+  # Define the API Gateway Deployment and Stage
+  ApiGatewayDeployment1:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref AllOperationsApiGateway
+      StageName: dev
+    DependsOn:
+      - UsersGetMethod
+      - UsersOptionsMethod
+      - UsersPostMethod
+      - UsersIdDeleteMethod
+      - UsersIdGetMethod
+      - UsersIdOptionsMethod
+      - UsersIdPatchMethod
+      - UsersIdPostMethod
+      - LoginOptionsMethod
+      - LoginPostMethod
+      - ProductsGetMethod                                
+      - ProductsOptionsMethod
+      - ProductsPostMethod
+      - ProductsIdDeleteMethod
+      - ProductsIdGetMethod
+      - ProductsIdOptionsMethod
+      - ProductsIdPatchMethod
+      - ProductsIdPostMethod
+      - OrdersGetMethod                                
+      - OrdersOptionsMethod
+      - OrdersPostMethod
+      - OrdersIdDeleteMethod
+      - OrdersIdGetMethod
+      - OrdersIdOptionsMethod
+      - OrdersIdPatchMethod
+      - OrdersIdPostMethod
+
+  ApiGatewayDeployment2:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ImageUploadApiGateway
+      StageName: dev
+    DependsOn:
+      - ImageUploadPostMethod
+      - ImageUploadOptionsMethod
+
+
+  EC2Instance:
+    Type: "AWS::EC2::Instance"
+    DependsOn:
+      - ApiGatewayDeployment2
+      - ApiGatewayDeployment1
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0ba9883b710b05ac6
+      KeyName: TermAssignmentEC2Key
+      SecurityGroups:
+        - !Ref InstanceSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          # Update the system and install Docker
+          yum update -y
+          yum install -y docker
+          service docker start
+          usermod -a -G docker ec2-user
+          # Create the environment file and add environment variables
+          echo "NEXT_PUBLIC_BASE_URL=https://${AllOperationsApiGateway}.execute-api.${AWS::Region}.amazonaws.com/dev" >> /home/ec2-user/env
+          echo "NEXT_PUBLIC_UPLOAD_URL=https://${ImageUploadApiGateway}.execute-api.${AWS::Region}.amazonaws.com/dev" >> /home/ec2-user/env
+          # Ensure the environment file is readable
+          chmod 644 /home/ec2-user/env
+          # Pull the Docker image
+          docker pull harshmaisuri/cloudtermassignment
+          # Run the Docker container with the environment file
+          sudo docker run -d -p 3000:3000 --env-file /home/ec2-user/env harshmaisuri/cloudtermassignment
+      Tags:
+        - Key: Name
+          Value: !Sub "Term_Project"
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH and TCP/3000 access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+
+# Outputs:
+  # ApiUrl1:
+  #   Description: "API Gateway endpoint URL for dev stage"
+  #   Value: !Sub https://${AllOperationsApiGateway}.execute-api.${AWS::Region}.amazonaws.com/dev
+  
+
+  # ApiUrl2:
+  #   Description: "API Gateway endpoint URL for dev stage"
+  #   Value: !Sub https://${ImageUploadApiGateway}.execute-api.${AWS::Region}.amazonaws.com/dev
+
+  # QueueURL:
+  #   Description: "The URL of the created SQS queue"
+  #   Value: !Sub https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/Notification

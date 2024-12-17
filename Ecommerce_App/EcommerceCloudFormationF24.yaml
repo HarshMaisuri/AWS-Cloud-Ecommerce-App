@@ -1,0 +1,787 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Ecommerce CloudFormation Template with EC2 Instances, ALB, Listeners, and Auto Scaling'
+
+Parameters:
+  SecretContent:
+    Type: String
+    Description: JSON data for Secrets Manager
+
+Resources:
+
+  # VPC
+  EcommerceVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: EcommerceVPC
+
+  # Internet Gateway
+  EcommerceInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: EcommerceInternetGateway
+
+  EcommerceVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      InternetGatewayId: !Ref EcommerceInternetGateway
+
+  NatGatewayEIP1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: EcommerceVPC
+
+  NatGatewayEIP2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: EcommerceVPC
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    DependsOn: NatGatewayEIP1
+    Properties: 
+      SubnetId: 
+        Ref: "PublicSubnet1"
+      AllocationId: 
+        Fn::GetAtt: 
+          - NatGatewayEIP1
+          - AllocationId
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    DependsOn: NatGatewayEIP2
+    Properties: 
+      SubnetId: 
+        Ref: "PublicSubnet2"
+      AllocationId: 
+        Fn::GetAtt: 
+          - NatGatewayEIP2
+          - AllocationId
+
+
+  MyRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      Tags:
+        - Key: Name
+          Value: EcommerceInternetGateway
+
+  MyRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref MyRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref EcommerceInternetGateway
+
+  MyRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref MyRouteTable
+
+  MyRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref MyRouteTable
+
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable1
+
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable2
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  # Public Subnet 1 (AZ1)
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: PublicSubnet1
+
+  # Public Subnet 2 (AZ2)
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: PublicSubnet2
+
+  # Private Subnet 1 (AZ1)
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet1
+
+  # Private Subnet 2 (AZ2)
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet2
+
+  ECommerceSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: ECommerceProjectSecrets
+      Description: Secrets for eCommerce Project
+      SecretString: !Ref SecretContent
+
+  # ALB Security Group
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      GroupDescription: Security group for ALB
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+
+  # Frontend Security Group
+  FrontendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      GroupDescription: Security group for Frontend services
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+
+  # Backend Security Group
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref EcommerceVPC
+      GroupDescription: Security group for Backend services
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+
+  
+  # Target Group for Frontend/
+  TargetGroupFrontend:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    DeletionPolicy: "Delete"
+    Properties:
+      IpAddressType: "ipv4"
+      HealthCheckIntervalSeconds: 30
+      Matcher:
+        HttpCode: "200"
+      HealthCheckPath: "/"
+      Port: 80
+      Targets:
+        - Id: !Ref FrontendEC2Instance1
+        - Id: !Ref FrontendEC2Instance2
+      HealthCheckEnabled: true
+      ProtocolVersion: "HTTP1"
+      UnhealthyThresholdCount: 2
+      HealthCheckTimeoutSeconds: 5
+      Name: "FontendTargetGrp"
+      VpcId:
+        Ref: "EcommerceVPC"
+      HealthyThresholdCount: 5
+      HealthCheckProtocol: "HTTP"
+      TargetType: "instance"
+      HealthCheckPort: "traffic-port"
+      Protocol: "HTTP"
+      Tags:
+        - Key: Role
+          Value: Frontend
+        - Key: Name
+          Value: FrontendTargetGroup
+
+  # Target Group for Backend
+  TargetGroupBackend:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    DeletionPolicy: "Delete"
+    Properties:
+      IpAddressType: "ipv4"
+      HealthCheckIntervalSeconds: 30
+      Matcher:
+        HttpCode: "200"
+      HealthCheckPath: "/health"
+      Port: 5000
+      Targets:
+        - Id: !Ref BackendEC2Instance1
+        - Id: !Ref BackendEC2Instance2
+      HealthCheckEnabled: true
+      ProtocolVersion: "HTTP1"
+      UnhealthyThresholdCount: 2
+      HealthCheckTimeoutSeconds: 5
+      Name: "BackendTargetGrp"
+      VpcId:
+        Ref: "EcommerceVPC"
+      HealthyThresholdCount: 5
+      HealthCheckProtocol: "HTTP"
+      TargetType: "instance"
+      HealthCheckPort: "traffic-port"
+      Protocol: "HTTP"
+      Tags:
+        - Key: Role
+          Value: Backend
+        - Key: Name
+          Value: BackendTargetGroup
+
+  # ALB
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: ALB-Ecommerce
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+
+  ElasticLoadBalancingV2ListenerFrontend:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    DeletionPolicy: "Delete"
+    Properties:
+      Protocol: "HTTP"
+      LoadBalancerArn:
+        Ref: "ALB"
+      DefaultActions:
+      - TargetGroupArn:
+          Ref: "TargetGroupFrontend"
+        Type: "forward"
+        ForwardConfig:
+          TargetGroupStickinessConfig:
+            Enabled: false
+          TargetGroups:
+          - TargetGroupArn:
+              Ref: "TargetGroupFrontend"
+            Weight: 1
+      Port: 80    
+
+  ElasticLoadBalancingV2ListenerBackend:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    DeletionPolicy: "Delete"
+    Properties:
+      Protocol: "HTTP"
+      LoadBalancerArn:
+        Ref: "ALB"
+      DefaultActions:
+      - TargetGroupArn:
+          Ref: "TargetGroupBackend"
+        Type: "forward"
+        ForwardConfig:
+          TargetGroupStickinessConfig:
+            Enabled: false
+          TargetGroups:
+          - TargetGroupArn:
+              Ref: "TargetGroupBackend"
+            Weight: 1
+      Port: 5000     
+
+  
+
+  FrontendEC2Instance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: "ami-0453ec754f44f9a4a"
+      # IamInstanceProfile: !Ref LabInstanceProfile
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroupIds:
+        - !Ref FrontendSecurityGroup
+      Tags:
+        - Key: Name
+          Value: FrontendInstance1
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Update the system and install Docker
+          sudo yum update -y
+          # sudo amazon-linux-extras enable docker
+          sudo yum install -y docker
+          sudo service docker start
+          sudo systemctl enable docker
+          sudo usermod -a -G docker ec2-user
+          # Pull and run the Frontend Docker image
+          sudo docker pull harshmaisuri/cloudtermprojectfrontend:latest
+          sudo docker run -d --name frontend-1 -p 80:3000 harshmaisuri/cloudtermprojectfrontend:latest
+
+  FrontendEC2Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: "ami-0453ec754f44f9a4a"
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref FrontendSecurityGroup
+      Tags:
+        - Key: Name
+          Value: FrontendInstance2
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Update the system and install Docker
+          sudo yum update -y
+          # sudo amazon-linux-extras enable docker
+          sudo yum install -y docker
+          sudo service docker start
+          sudo systemctl enable docker
+          sudo usermod -a -G docker ec2-user
+          # Pull and run the Frontend Docker image
+          sudo docker pull harshmaisuri/cloudtermprojectfrontend:latest
+          sudo docker run -d --name frontend-2 -p 80:3000 harshmaisuri/cloudtermprojectfrontend:latest
+
+  BackendEC2Instance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: "ami-0453ec754f44f9a4a"
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroupIds:
+        - !Ref BackendSecurityGroup
+      Tags:
+        - Key: Name
+          Value: BackendInstance1
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Update the system and install Docker
+          sudo yum update -y
+          # sudo amazon-linux-extras enable docker
+          sudo yum install -y docker
+          sudo service docker start
+          sudo systemctl enable docker
+          sudo usermod -a -G docker ec2-user
+          # Pull and run the Backend Docker image
+          sudo docker pull harshmaisuri/cloudtermprojectbackend:latest
+          sudo docker run -d --name backend-1 -p 5000:5000 harshmaisuri/cloudtermprojectbackend:latest
+
+  BackendEC2Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: "ami-0453ec754f44f9a4a"
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref BackendSecurityGroup
+      Tags:
+        - Key: Name
+          Value: BackendInstance2
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Update the system and install Docker
+          sudo yum update -y
+          # sudo amazon-linux-extras enable docker
+          sudo yum install -y docker
+          sudo service docker start
+          sudo systemctl enable docker
+          sudo usermod -a -G docker ec2-user
+          # Pull and run the Backend Docker image
+          sudo docker pull harshmaisuri/cloudtermprojectbackend:latest
+          sudo docker run -d --name backend-2 -p 5000:5000 harshmaisuri/cloudtermprojectbackend:latest
+  
+  
+
+
+  # Frontend Auto Scaling Group
+  FrontendASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      LaunchConfigurationName: !Ref FrontendLaunchConfig
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref TargetGroupFrontend
+      HealthCheckType: EC2
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: FrontendASG
+          PropagateAtLaunch: true
+
+  FrontendLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      InstanceType: t2.micro
+      ImageId: "ami-0453ec754f44f9a4a"
+      SecurityGroups:
+        - !Ref FrontendSecurityGroup
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          sudo yum update -y
+          sudo yum install -y docker
+          sudo service docker start
+          sudo systemctl enable docker
+          sudo usermod -a -G docker ec2-user
+          sudo docker pull harshmaisuri/cloudtermprojectfrontend:latest
+          sudo docker run -d --name frontend -p 80:3000 harshmaisuri/cloudtermprojectfrontend:latest
+
+# Backend Auto Scaling Group
+  BackendASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      LaunchConfigurationName: !Ref BackendLaunchConfig
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+      TargetGroupARNs:
+        - !Ref TargetGroupBackend
+      HealthCheckType: EC2
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: BackendASG
+          PropagateAtLaunch: true
+
+  BackendLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      InstanceType: t2.micro
+      ImageId: "ami-0453ec754f44f9a4a"
+      SecurityGroups:
+        - !Ref BackendSecurityGroup
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          sudo yum update -y
+          sudo yum install -y docker
+          sudo service docker start
+          sudo systemctl enable docker
+          sudo usermod -a -G docker ec2-user
+          sudo docker pull harshmaisuri/cloudtermprojectbackend:latest
+          sudo docker run -d --name backend -p 5000:5000 harshmaisuri/cloudtermprojectbackend:latest
+
+
+  # Define the DynamoDB Table
+  UsersTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'UsersTable'
+      AttributeDefinitions:
+        - AttributeName: 'id'
+          AttributeType: 'S'
+        - AttributeName: 'email'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'id'
+          KeyType: 'HASH'
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      GlobalSecondaryIndexes:
+        - IndexName: 'email-index'
+          KeySchema:
+            - AttributeName: 'email'
+              KeyType: 'HASH'
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+
+  ProductsTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'ProductsTable'
+      AttributeDefinitions:
+        - AttributeName: 'id'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'id'
+          KeyType: 'HASH'
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  OrdersTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'OrdersTable'
+      AttributeDefinitions:
+        - AttributeName: 'id'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'id'
+          KeyType: 'HASH'
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  uploadUtility:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'uploadUtility'
+      Handler: 'lambda_function.lambda_handler'
+      Runtime: 'python3.12'
+      Code:
+        S3Bucket: 'clothing-images-ecom'
+        S3Key: 'image_upload_s3.zip'
+      Role: 'arn:aws:iam::685083958127:role/LabRole'
+      Timeout: 30 
+      Environment:
+        Variables:
+          BUCKET_NAME: "clothing-images-ecom"     
+
+  NotificationLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'NotficationLambdaFunction'
+      Handler: 'index.handler'
+      Runtime: 'nodejs20.x'
+      Code:
+        S3Bucket: 'clothing-images-ecom'
+        S3Key: 'email_notification_s3.zip'
+      Role: 'arn:aws:iam::685083958127:role/LabRole'
+      Timeout: 30           
+
+  # SQS creation 
+
+  NotificationQueue:
+    Type: "AWS::SQS::Queue"
+    Properties:
+      QueueName: "Notif1"
+      VisibilityTimeout: 43200
+      MessageRetentionPeriod: 60
+
+  # SQS (NotificationQueue) trigger to NotficationLambdaFunction    
+
+  LambdaSQSTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 10
+      EventSourceArn: !GetAtt Notif1.Arn
+      FunctionName: !GetAtt NotificationLambdaFunction.Arn
+      Enabled: true
+
+
+  # API Gateway definition with binary media type support
+  ImageUploadApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: ImageUpload
+      Description: API for file uploads
+      BinaryMediaTypes:
+        - "multipart/form-data"  # Enable binary support for form data
+
+  # Lambda permission to allow API Gateway to invoke the Lambda function
+  ImageUploadLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: "arn:aws:lambda:us-east-1:450301855811:function:uploadUtility"
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageUploadApiGateway}/*/POST/file-upload"
+  
+  # Create a resource "/file-upload"
+  FileUploadResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ImageUploadApiGateway.RootResourceId
+      PathPart: file-upload
+      RestApiId: !Ref ImageUploadApiGateway
+
+  # POST method to invoke the Lambda function using AWS_PROXY integration
+  ImageUploadPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref FileUploadResource
+      RestApiId: !Ref ImageUploadApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:450301855811:function:uploadUtility/invocations"
+        PassthroughBehavior: WHEN_NO_MATCH
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      RequestParameters:
+        method.request.header.Content-Type: true
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  # OPTIONS method for CORS preflight
+  ImageUploadOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref FileUploadResource
+      RestApiId: !Ref ImageUploadApiGateway
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  # Deployment and Stage
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ImageUploadApiGateway
+      StageName: Prod
+    DependsOn:
+      - ImageUploadPostMethod
+      - ImageUploadOptionsMethod
+
+
+  AWSTemplateFormatVersion: '2010-09-09'
+Description: Simple CloudFormation template for CloudTrail logging management events to an S3 bucket
+
+Resources:
+  CloudTrailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: "clothing-images-ecom"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  CloudTrail:
+    Type: AWS::CloudTrail::Trail
+    Properties:
+      TrailName: "ecomtrail"
+      S3BucketName: !Ref CloudTrailBucket
+      IsLogging: true
+      IncludeGlobalServiceEvents: true
+      EventSelectors:
+        - ReadWriteType: All
+          IncludeManagementEvents: true
+
+Outputs:
+  ApiEndpoint:
+    Description: "Endpoint for the image upload API"
+    Value: !Sub "https://${ImageUploadApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/file-upload"
+        
+Outputs:
+  ALBDNSName:
+    Value: !GetAtt ALB.DNSName
+    Export:
+      Name: ALB-DNSName

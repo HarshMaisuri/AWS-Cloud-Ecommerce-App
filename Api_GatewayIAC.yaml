@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: API Gateway integration with an existing Lambda function for file upload
+
+Resources:
+  # API Gateway definition with binary media type support
+  ImageUploadApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: ImageUpload
+      Description: API for file uploads
+      BinaryMediaTypes:
+        - "multipart/form-data"  # Enable binary support for form data
+
+  # Lambda permission to allow API Gateway to invoke the Lambda function
+  ImageUploadLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: "arn:aws:lambda:us-east-1:450301855811:function:uploadUtility"
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageUploadApiGateway}/*/POST/file-upload"
+  
+  # Create a resource "/file-upload"
+  FileUploadResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ImageUploadApiGateway.RootResourceId
+      PathPart: file-upload
+      RestApiId: !Ref ImageUploadApiGateway
+
+  # POST method to invoke the Lambda function using AWS_PROXY integration
+  ImageUploadPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref FileUploadResource
+      RestApiId: !Ref ImageUploadApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:450301855811:function:uploadUtility/invocations"
+        PassthroughBehavior: WHEN_NO_MATCH
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      RequestParameters:
+        method.request.header.Content-Type: true
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  # OPTIONS method for CORS preflight
+  ImageUploadOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref FileUploadResource
+      RestApiId: !Ref ImageUploadApiGateway
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: 'Empty'
+
+  # Deployment and Stage
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ImageUploadApiGateway
+      StageName: Prod
+    DependsOn:
+      - ImageUploadPostMethod
+      - ImageUploadOptionsMethod
+
+Outputs:
+  ApiEndpoint:
+    Description: "Endpoint for the image upload API"
+    Value: !Sub "https://${ImageUploadApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/file-upload"
